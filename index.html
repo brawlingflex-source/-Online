@@ -176,7 +176,6 @@
             width: auto;
         }
 
-        /* Новая кнопка переводов внутри баланса */
         .balance-header {
             display: flex;
             justify-content: space-between;
@@ -373,7 +372,7 @@
                 </div>
             </div>
 
-            <!-- Экран Михаила (с новой кнопкой переводов) -->
+            <!-- Экран Михаила -->
             <div id="mikhailScreen" class="hidden">
                 <button class="back-btn" id="backFromMikhail">← Назад</button>
                 <div class="balance-card">
@@ -484,7 +483,7 @@
             return { date, time };
         }
 
-        // Загрузка данных пользователей из Firebase с сортировкой транзакций Михаила
+        // Загрузка данных пользователей из Firebase
         function loadUserData(callback) {
             const usersRef = db.ref('users');
             usersRef.once('value', (snapshot) => {
@@ -497,7 +496,7 @@
                         transactions: []
                     };
                 } else {
-                    // Сортируем транзакции по убыванию даты и времени
+                    // Сортируем транзакции по убыванию даты и времени (новые сверху)
                     if (data.mikhail.transactions) {
                         data.mikhail.transactions.sort((a, b) => {
                             if (a.date === b.date) return b.time.localeCompare(a.time);
@@ -517,6 +516,7 @@
             });
         }
 
+        // Сохранение данных Михаила (обычный set)
         function saveMikhailData() {
             return db.ref('users/mikhail').set(mikhailData);
         }
@@ -630,7 +630,7 @@
             document.getElementById('backFromNikolay').addEventListener('click', () => showScreen('account'));
             document.getElementById('backFromTransfer').addEventListener('click', () => showScreen('mikhail'));
 
-            // Новая кнопка переводов у Михаила
+            // Кнопка переводов у Михаила
             document.getElementById('mikhailTransferBtn').addEventListener('click', () => {
                 showScreen('transfer');
             });
@@ -657,7 +657,6 @@
                 const { date, time } = getMoscowDateTime();
                 mikhailData.balance -= amount;
                 if (!mikhailData.transactions) mikhailData.transactions = [];
-                // Вставляем новую операцию в начало массива
                 mikhailData.transactions.unshift({
                     type: 'outcome',
                     amount: amount,
@@ -683,7 +682,7 @@
                 document.getElementById('nikolayTransferForm').classList.add('hidden');
             });
 
-            // Николай: выполнить перевод Михаилу (зачисление)
+            // Николай: выполнить перевод Михаилу (используем транзакцию)
             document.getElementById('executeNikolayTransfer').addEventListener('click', () => {
                 const sender = document.getElementById('senderName').value.trim() || 'Николай';
                 const amount = parseFloat(document.getElementById('transferAmountNik').value);
@@ -694,10 +693,19 @@
                     return;
                 }
 
-                loadUserData(() => {
-                    const { date, time } = getMoscowDateTime();
-                    if (!mikhailData.transactions) mikhailData.transactions = [];
-                    mikhailData.transactions.unshift({
+                const { date, time } = getMoscowDateTime();
+
+                // Атомарная операция: читаем текущие данные и обновляем
+                const mikhailRef = db.ref('users/mikhail');
+                mikhailRef.transaction((currentData) => {
+                    if (currentData === null) {
+                        return currentData; // не должно случиться
+                    }
+                    // Увеличиваем баланс
+                    currentData.balance = (currentData.balance || 0) + amount;
+                    // Добавляем транзакцию в начало
+                    if (!currentData.transactions) currentData.transactions = [];
+                    currentData.transactions.unshift({
                         type: 'income',
                         amount: amount,
                         date: date,
@@ -705,16 +713,31 @@
                         comment: `От ${sender}: ${comment}`,
                         counterparty: sender
                     });
-                    mikhailData.balance += amount;
-                    saveMikhailData().then(() => {
+                    // Сортируем, чтобы сохранить порядок (новые сверху) — но unshift уже добавил в начало, сортировка не обязательна, но можно оставить
+                    // Для единообразия отсортируем
+                    currentData.transactions.sort((a, b) => {
+                        if (a.date === b.date) return b.time.localeCompare(a.time);
+                        return b.date.localeCompare(a.date);
+                    });
+                    return currentData;
+                }).then((result) => {
+                    if (result.committed) {
+                        // Обновляем локальные данные
+                        mikhailData = result.snapshot.val();
                         alert('Перевод выполнен');
                         document.getElementById('nikolayTransferForm').classList.add('hidden');
                         document.getElementById('transferAmountNik').value = '';
                         document.getElementById('transferCommentNik').value = '';
-                    });
+                    } else {
+                        alert('Ошибка: данные были изменены, попробуйте снова');
+                    }
+                }).catch((error) => {
+                    console.error(error);
+                    alert('Ошибка при переводе');
                 });
             });
 
+            // Николай: показать форму очистки
             document.getElementById('nikolayClearMikhail').addEventListener('click', () => {
                 document.getElementById('nikolayClearForm').classList.remove('hidden');
             });
@@ -723,20 +746,30 @@
                 document.getElementById('confirmClearInput').value = '';
             });
 
+            // Николай: очистить аккаунт Михаила (транзакция)
             document.getElementById('executeClear').addEventListener('click', () => {
                 const confirmText = document.getElementById('confirmClearInput').value.trim();
                 if (confirmText !== 'ПОДТВЕРДИТЬ') {
                     alert('Введите слово ПОДТВЕРДИТЬ точно');
                     return;
                 }
-                loadUserData(() => {
-                    mikhailData.balance = 0;
-                    mikhailData.transactions = [];
-                    saveMikhailData().then(() => {
+
+                const mikhailRef = db.ref('users/mikhail');
+                mikhailRef.transaction((currentData) => {
+                    if (currentData === null) return currentData;
+                    // Обнуляем баланс и очищаем историю, но сохраняем регистрацию и тему
+                    currentData.balance = 0;
+                    currentData.transactions = [];
+                    return currentData;
+                }).then((result) => {
+                    if (result.committed) {
+                        mikhailData = result.snapshot.val();
                         alert('Аккаунт Михаила очищен');
                         document.getElementById('nikolayClearForm').classList.add('hidden');
                         document.getElementById('confirmClearInput').value = '';
-                    });
+                    } else {
+                        alert('Ошибка очистки, попробуйте снова');
+                    }
                 });
             });
         });
