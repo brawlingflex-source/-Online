@@ -170,6 +170,17 @@
             border-color: #7ccf9c;
         }
 
+        /* Красная кнопка списания */
+        .btn-danger {
+            background: #dc3545;
+            border: none;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #b02a37;
+        }
+
         .btn-small {
             padding: 10px 16px;
             font-size: 0.9rem;
@@ -396,8 +407,10 @@
                 <h3 style="margin-bottom: 20px;">Панель управления</h3>
 
                 <button class="btn" id="nikolayTransferToMikhail">Перевести Михаилу</button>
+                <button class="btn btn-danger" id="nikolayDebitFromMikhail">Списать у Михаила</button>
                 <button class="btn btn-outline" id="nikolayClearMikhail">Очистить аккаунт Михаила</button>
 
+                <!-- Форма перевода Николая (зачисление) -->
                 <div id="nikolayTransferForm" class="hidden mt-4">
                     <h4>Перевод Михаилу</h4>
                     <div class="form-group">
@@ -416,6 +429,22 @@
                     <button class="btn btn-outline" id="cancelNikolayTransfer">Отмена</button>
                 </div>
 
+                <!-- Форма списания (дебет) -->
+                <div id="nikolayDebitForm" class="hidden mt-4">
+                    <h4 style="color: #dc3545;">Списать у Михаила</h4>
+                    <div class="form-group">
+                        <label>Сумма списания (₽)</label>
+                        <input type="number" id="debitAmount" class="form-control" placeholder="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Комментарий (необязательно)</label>
+                        <input type="text" id="debitComment" class="form-control" placeholder="Основание">
+                    </div>
+                    <button class="btn btn-danger" id="executeDebit">Списать</button>
+                    <button class="btn btn-outline" id="cancelDebit">Отмена</button>
+                </div>
+
+                <!-- Форма очистки (подтверждение) -->
                 <div id="nikolayClearForm" class="hidden mt-4">
                     <div class="warning">Введите слово ПОДТВЕРДИТЬ для очистки</div>
                     <input type="text" id="confirmClearInput" class="form-control" placeholder="ПОДТВЕРДИТЬ">
@@ -585,6 +614,7 @@
             nikolayScreen.classList.add('hidden');
             transferScreen.classList.add('hidden');
             document.getElementById('nikolayTransferForm').classList.add('hidden');
+            document.getElementById('nikolayDebitForm').classList.add('hidden');
             document.getElementById('nikolayClearForm').classList.add('hidden');
 
             if (screenName === 'account') {
@@ -677,12 +707,22 @@
             // Николай: показать форму перевода
             document.getElementById('nikolayTransferToMikhail').addEventListener('click', () => {
                 document.getElementById('nikolayTransferForm').classList.remove('hidden');
+                document.getElementById('nikolayDebitForm').classList.add('hidden');
             });
             document.getElementById('cancelNikolayTransfer').addEventListener('click', () => {
                 document.getElementById('nikolayTransferForm').classList.add('hidden');
             });
 
-            // Николай: выполнить перевод Михаилу (используем транзакцию)
+            // Николай: показать форму списания
+            document.getElementById('nikolayDebitFromMikhail').addEventListener('click', () => {
+                document.getElementById('nikolayDebitForm').classList.remove('hidden');
+                document.getElementById('nikolayTransferForm').classList.add('hidden');
+            });
+            document.getElementById('cancelDebit').addEventListener('click', () => {
+                document.getElementById('nikolayDebitForm').classList.add('hidden');
+            });
+
+            // Николай: выполнить перевод (зачисление) - транзакция
             document.getElementById('executeNikolayTransfer').addEventListener('click', () => {
                 const sender = document.getElementById('senderName').value.trim() || 'Николай';
                 const amount = parseFloat(document.getElementById('transferAmountNik').value);
@@ -694,16 +734,10 @@
                 }
 
                 const { date, time } = getMoscowDateTime();
-
-                // Атомарная операция: читаем текущие данные и обновляем
                 const mikhailRef = db.ref('users/mikhail');
                 mikhailRef.transaction((currentData) => {
-                    if (currentData === null) {
-                        return currentData; // не должно случиться
-                    }
-                    // Увеличиваем баланс
+                    if (currentData === null) return currentData;
                     currentData.balance = (currentData.balance || 0) + amount;
-                    // Добавляем транзакцию в начало
                     if (!currentData.transactions) currentData.transactions = [];
                     currentData.transactions.unshift({
                         type: 'income',
@@ -713,8 +747,7 @@
                         comment: `От ${sender}: ${comment}`,
                         counterparty: sender
                     });
-                    // Сортируем, чтобы сохранить порядок (новые сверху) — но unshift уже добавил в начало, сортировка не обязательна, но можно оставить
-                    // Для единообразия отсортируем
+                    // Сортируем для порядка (новые сверху)
                     currentData.transactions.sort((a, b) => {
                         if (a.date === b.date) return b.time.localeCompare(a.time);
                         return b.date.localeCompare(a.date);
@@ -722,7 +755,6 @@
                     return currentData;
                 }).then((result) => {
                     if (result.committed) {
-                        // Обновляем локальные данные
                         mikhailData = result.snapshot.val();
                         alert('Перевод выполнен');
                         document.getElementById('nikolayTransferForm').classList.add('hidden');
@@ -737,9 +769,60 @@
                 });
             });
 
+            // Николай: выполнить списание (дебет) - транзакция
+            document.getElementById('executeDebit').addEventListener('click', () => {
+                const amount = parseFloat(document.getElementById('debitAmount').value);
+                const comment = document.getElementById('debitComment').value.trim() || 'Списание';
+
+                if (isNaN(amount) || amount <= 0) {
+                    alert('Введите корректную сумму');
+                    return;
+                }
+
+                const { date, time } = getMoscowDateTime();
+                const mikhailRef = db.ref('users/mikhail');
+                mikhailRef.transaction((currentData) => {
+                    if (currentData === null) return currentData;
+                    // Проверяем достаточно ли средств
+                    if ((currentData.balance || 0) < amount) {
+                        return; // abort transaction
+                    }
+                    currentData.balance -= amount;
+                    if (!currentData.transactions) currentData.transactions = [];
+                    currentData.transactions.unshift({
+                        type: 'outcome',
+                        amount: amount,
+                        date: date,
+                        time: time,
+                        comment: `Списание: ${comment}`,
+                        counterparty: 'Николай (списание)'
+                    });
+                    currentData.transactions.sort((a, b) => {
+                        if (a.date === b.date) return b.time.localeCompare(a.time);
+                        return b.date.localeCompare(a.date);
+                    });
+                    return currentData;
+                }).then((result) => {
+                    if (result.committed) {
+                        mikhailData = result.snapshot.val();
+                        alert('Списание выполнено');
+                        document.getElementById('nikolayDebitForm').classList.add('hidden');
+                        document.getElementById('debitAmount').value = '';
+                        document.getElementById('debitComment').value = '';
+                    } else {
+                        alert('Ошибка: недостаточно средств или данные изменены');
+                    }
+                }).catch((error) => {
+                    console.error(error);
+                    alert('Ошибка при списании');
+                });
+            });
+
             // Николай: показать форму очистки
             document.getElementById('nikolayClearMikhail').addEventListener('click', () => {
                 document.getElementById('nikolayClearForm').classList.remove('hidden');
+                document.getElementById('nikolayTransferForm').classList.add('hidden');
+                document.getElementById('nikolayDebitForm').classList.add('hidden');
             });
             document.getElementById('cancelClear').addEventListener('click', () => {
                 document.getElementById('nikolayClearForm').classList.add('hidden');
@@ -757,7 +840,6 @@
                 const mikhailRef = db.ref('users/mikhail');
                 mikhailRef.transaction((currentData) => {
                     if (currentData === null) return currentData;
-                    // Обнуляем баланс и очищаем историю, но сохраняем регистрацию и тему
                     currentData.balance = 0;
                     currentData.transactions = [];
                     return currentData;
