@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <title>Сбербанк • Два аккаунта</title>
+    <!-- Firebase SDK (8-я compat-версия) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
+            background: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            transition: background 0.2s;
+        }
+
+        body.dark-theme {
+            background: #121212;
+            color: #e0e0e0;
+        }
+
+        #app {
+            width: 100%;
+            max-width: 420px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 32px 32px 0 0;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            min-height: 700px;
+            display: flex;
+            flex-direction: column;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        body.dark-theme #app {
+            background: #1e1e1e;
+            color: #f0f0f0;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+        }
+
+        .header {
+            background: #1a7742;
+            color: white;
+            padding: 24px 20px 20px;
+            border-bottom-left-radius: 24px;
+            border-bottom-right-radius: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        body.dark-theme .header {
+            background: #0d4b2b;
+        }
+
+        .header h2 {
+            font-weight: 500;
+            font-size: 1.4rem;
+        }
+
+        .theme-switch {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 30px;
+            font-size: 0.9rem;
+            display: flex;
+            gap: 6px;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+        }
+
+        .content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .account-selector {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-top: 40px;
+        }
+
+        .account-card {
+            background: #f9f9f9;
+            border-radius: 24px;
+            padding: 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            transition: 0.2s;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+
+        body.dark-theme .account-card {
+            background: #2d2d2d;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+
+        .account-card:hover {
+            border-color: #1a7742;
+        }
+
+        .avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 28px;
+            background: #1a7742;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            font-weight: bold;
+        }
+
+        .account-info h3 {
+            font-size: 1.4rem;
+            font-weight: 500;
+        }
+
+        .account-info p {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        body.dark-theme .account-info p {
+            color: #aaa;
+        }
+
+        .btn {
+            background: #1a7742;
+            border: none;
+            color: white;
+            padding: 14px 24px;
+            border-radius: 40px;
+            font-size: 1rem;
+            font-weight: 600;
+            width: 100%;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-bottom: 12px;
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 2px solid #1a7742;
+            color: #1a7742;
+        }
+
+        body.dark-theme .btn-outline {
+            color: #7ccf9c;
+            border-color: #7ccf9c;
+        }
+
+        .btn-small {
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            width: auto;
+        }
+
+        /* Новая кнопка переводов внутри баланса */
+        .balance-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .btn-transfers {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.4);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 30px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            backdrop-filter: blur(4px);
+        }
+
+        .btn-transfers:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .balance-card {
+            background: linear-gradient(145deg, #1a7742, #135c33);
+            color: white;
+            padding: 24px;
+            border-radius: 28px;
+            margin-bottom: 24px;
+        }
+
+        .balance-label {
+            font-size: 0.95rem;
+            opacity: 0.9;
+        }
+
+        .balance-amount {
+            font-size: 3rem;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+
+        .section-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .transactions-list {
+            list-style: none;
+            margin-bottom: 30px;
+        }
+
+        .transaction-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 0;
+            border-bottom: 1px solid #eaeaea;
+        }
+
+        body.dark-theme .transaction-item {
+            border-bottom-color: #333;
+        }
+
+        .transaction-left {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .transaction-comment {
+            font-weight: 500;
+        }
+
+        .transaction-meta {
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        .transaction-amount {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .income {
+            color: #28a745;
+        }
+
+        .outcome {
+            color: #dc3545;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: #333;
+        }
+
+        body.dark-theme .form-group label {
+            color: #ccc;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1px solid #ddd;
+            border-radius: 30px;
+            font-size: 1rem;
+            background: #fafafa;
+        }
+
+        body.dark-theme .form-control {
+            background: #2d2d2d;
+            border-color: #444;
+            color: #f0f0f0;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #1a7742;
+        }
+
+        .warning {
+            color: #dc3545;
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+        }
+
+        .nav-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .back-btn {
+            background: none;
+            border: none;
+            color: #1a7742;
+            font-size: 1.2rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            margin-bottom: 16px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .mt-4 {
+            margin-top: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="header">
+            <h2 id="header-title">Сбербанк</h2>
+            <button class="theme-switch" id="themeToggle">
+                <span>🌙</span> Тема
+            </button>
+        </div>
+
+        <div class="content" id="contentArea">
+            <!-- Экран выбора аккаунта -->
+            <div id="accountSelectionScreen">
+                <div class="account-selector">
+                    <div class="account-card" data-account="mikhail">
+                        <div class="avatar">М</div>
+                        <div class="account-info">
+                            <h3>Михаил С.</h3>
+                            <p>Счёт · ₽</p>
+                        </div>
+                    </div>
+                    <div class="account-card" data-account="nikolay">
+                        <div class="avatar">Н</div>
+                        <div class="account-info">
+                            <h3>Николай</h3>
+                            <p>Управление</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Экран Михаила (с новой кнопкой переводов) -->
+            <div id="mikhailScreen" class="hidden">
+                <button class="back-btn" id="backFromMikhail">← Назад</button>
+                <div class="balance-card">
+                    <div class="balance-header">
+                        <span class="balance-label">Баланс счёта</span>
+                        <button class="btn-transfers" id="mikhailTransferBtn">Переводы</button>
+                    </div>
+                    <div class="balance-amount" id="mikhailBalance">0 ₽</div>
+                </div>
+
+                <div class="section-title">
+                    <span>История операций</span>
+                    <span>(последние 10)</span>
+                </div>
+                <ul class="transactions-list" id="mikhailTransactions"></ul>
+            </div>
+
+            <!-- Экран Николая -->
+            <div id="nikolayScreen" class="hidden">
+                <button class="back-btn" id="backFromNikolay">← Назад</button>
+                <h3 style="margin-bottom: 20px;">Панель управления</h3>
+
+                <button class="btn" id="nikolayTransferToMikhail">Перевести Михаилу</button>
+                <button class="btn btn-outline" id="nikolayClearMikhail">Очистить аккаунт Михаила</button>
+
+                <div id="nikolayTransferForm" class="hidden mt-4">
+                    <h4>Перевод Михаилу</h4>
+                    <div class="form-group">
+                        <label>Имя отправителя</label>
+                        <input type="text" id="senderName" class="form-control" placeholder="Например: Николай" value="Николай">
+                    </div>
+                    <div class="form-group">
+                        <label>Сумма (₽)</label>
+                        <input type="number" id="transferAmountNik" class="form-control" placeholder="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Комментарий (необязательно)</label>
+                        <input type="text" id="transferCommentNik" class="form-control" placeholder="Подарок">
+                    </div>
+                    <button class="btn" id="executeNikolayTransfer">Перевести</button>
+                    <button class="btn btn-outline" id="cancelNikolayTransfer">Отмена</button>
+                </div>
+
+                <div id="nikolayClearForm" class="hidden mt-4">
+                    <div class="warning">Введите слово ПОДТВЕРДИТЬ для очистки</div>
+                    <input type="text" id="confirmClearInput" class="form-control" placeholder="ПОДТВЕРДИТЬ">
+                    <div class="nav-row">
+                        <button class="btn" id="executeClear">Очистить</button>
+                        <button class="btn btn-outline" id="cancelClear">Отмена</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Экран перевода (Михаил) -->
+            <div id="transferScreen" class="hidden">
+                <button class="back-btn" id="backFromTransfer">← Переводы</button>
+                <h3 style="margin-bottom: 20px;">Перевод денег</h3>
+                <div class="form-group">
+                    <label>Номер счета (только цифры)</label>
+                    <input type="text" id="accountNumber" class="form-control" placeholder="2200 0000 0000 0000">
+                </div>
+                <div class="form-group">
+                    <label>Сумма (₽)</label>
+                    <input type="number" id="transferAmount" class="form-control" placeholder="0">
+                </div>
+                <div class="form-group">
+                    <label>Комментарий (необязательно)</label>
+                    <input type="text" id="transferComment" class="form-control" placeholder="Назначение">
+                </div>
+                <button class="btn" id="executeTransfer">Перевести деньги</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 1. Инициализация Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyAu_wfaRhTsWNbsyFYmEigopqJck7ynxlU",
+            authDomain: "messeger-0wo2h4.firebaseapp.com",
+            databaseURL: "https://messeger-0wo2h4-default-rtdb.firebaseio.com",
+            projectId: "messeger-0wo2h4",
+            storageBucket: "messeger-0wo2h4.firebasestorage.app",
+            messagingSenderId: "1057251395030",
+            appId: "1:1057251395030:web:86f8f718ed938055e29077"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // 2. Глобальные переменные
+        let currentUser = null;
+        let mikhailData = null;
+        let nikolayData = null;
+
+        // Ссылки на DOM
+        const accountSelScreen = document.getElementById('accountSelectionScreen');
+        const mikhailScreen = document.getElementById('mikhailScreen');
+        const nikolayScreen = document.getElementById('nikolayScreen');
+        const transferScreen = document.getElementById('transferScreen');
+        const headerTitle = document.getElementById('header-title');
+
+        // 3. Вспомогательные функции
+
+        function getMoscowDateTime() {
+            const now = new Date();
+            const mskTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Moscow' }));
+            const date = mskTime.toISOString().slice(0, 10);
+            const time = mskTime.toTimeString().slice(0, 5);
+            return { date, time };
+        }
+
+        // Загрузка данных пользователей из Firebase с сортировкой транзакций Михаила
+        function loadUserData(callback) {
+            const usersRef = db.ref('users');
+            usersRef.once('value', (snapshot) => {
+                const data = snapshot.val() || {};
+                if (!data.mikhail) {
+                    data.mikhail = {
+                        balance: 5000,
+                        registrationDate: new Date().toISOString().slice(0, 10),
+                        theme: 'light',
+                        transactions: []
+                    };
+                } else {
+                    // Сортируем транзакции по убыванию даты и времени
+                    if (data.mikhail.transactions) {
+                        data.mikhail.transactions.sort((a, b) => {
+                            if (a.date === b.date) return b.time.localeCompare(a.time);
+                            return b.date.localeCompare(a.date);
+                        });
+                    }
+                }
+                if (!data.nikolay) {
+                    data.nikolay = { theme: 'light' };
+                }
+
+                mikhailData = data.mikhail;
+                nikolayData = data.nikolay;
+                usersRef.set(data).then(() => {
+                    if (callback) callback();
+                });
+            });
+        }
+
+        function saveMikhailData() {
+            return db.ref('users/mikhail').set(mikhailData);
+        }
+
+        function applyTheme(theme) {
+            if (theme === 'dark') {
+                document.body.classList.add('dark-theme');
+            } else {
+                document.body.classList.remove('dark-theme');
+            }
+        }
+
+        function loadThemeForUser(user) {
+            if (user === 'mikhail' && mikhailData) {
+                applyTheme(mikhailData.theme || 'light');
+            } else if (user === 'nikolay' && nikolayData) {
+                applyTheme(nikolayData.theme || 'light');
+            }
+        }
+
+        function toggleTheme() {
+            if (!currentUser) return;
+            const newTheme = document.body.classList.contains('dark-theme') ? 'light' : 'dark';
+            if (currentUser === 'mikhail') {
+                mikhailData.theme = newTheme;
+                saveMikhailData().then(() => {
+                    applyTheme(newTheme);
+                });
+            } else if (currentUser === 'nikolay') {
+                nikolayData.theme = newTheme;
+                db.ref('users/nikolay/theme').set(newTheme).then(() => {
+                    applyTheme(newTheme);
+                });
+            }
+        }
+
+        // Обновление UI Михаила
+        function renderMikhail() {
+            if (!mikhailData) return;
+            document.getElementById('mikhailBalance').innerText = mikhailData.balance.toLocaleString() + ' ₽';
+            const transactions = (mikhailData.transactions || []).slice(0, 10);
+            const tbody = document.getElementById('mikhailTransactions');
+            tbody.innerHTML = '';
+            transactions.forEach(t => {
+                const li = document.createElement('li');
+                li.className = 'transaction-item';
+                const sign = t.type === 'income' ? '+' : '-';
+                const amountClass = t.type === 'income' ? 'income' : 'outcome';
+                li.innerHTML = `
+                    <div class="transaction-left">
+                        <span class="transaction-comment">${t.comment || (t.type === 'income' ? 'Зачисление' : 'Перевод')}</span>
+                        <span class="transaction-meta">${t.date} ${t.time} • ${t.counterparty || ''}</span>
+                    </div>
+                    <span class="transaction-amount ${amountClass}">${sign}${t.amount} ₽</span>
+                `;
+                tbody.appendChild(li);
+            });
+            if (transactions.length === 0) {
+                tbody.innerHTML = '<li style="text-align:center;padding:20px;color:#888;">Нет операций</li>';
+            }
+        }
+
+        function showScreen(screenName) {
+            accountSelScreen.classList.add('hidden');
+            mikhailScreen.classList.add('hidden');
+            nikolayScreen.classList.add('hidden');
+            transferScreen.classList.add('hidden');
+            document.getElementById('nikolayTransferForm').classList.add('hidden');
+            document.getElementById('nikolayClearForm').classList.add('hidden');
+
+            if (screenName === 'account') {
+                accountSelScreen.classList.remove('hidden');
+                headerTitle.innerText = 'Сбербанк';
+                currentUser = null;
+            } else if (screenName === 'mikhail') {
+                mikhailScreen.classList.remove('hidden');
+                headerTitle.innerText = 'Михаил С.';
+                renderMikhail();
+            } else if (screenName === 'nikolay') {
+                nikolayScreen.classList.remove('hidden');
+                headerTitle.innerText = 'Николай';
+            } else if (screenName === 'transfer') {
+                transferScreen.classList.remove('hidden');
+            }
+        }
+
+        // 4. События и инициализация
+        document.addEventListener('DOMContentLoaded', () => {
+            loadUserData(() => {
+                showScreen('account');
+            });
+
+            document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+
+            document.querySelectorAll('.account-card').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    const account = card.dataset.account;
+                    currentUser = account;
+                    loadUserData(() => {
+                        loadThemeForUser(account);
+                        if (account === 'mikhail') {
+                            showScreen('mikhail');
+                        } else {
+                            showScreen('nikolay');
+                        }
+                    });
+                });
+            });
+
+            document.getElementById('backFromMikhail').addEventListener('click', () => showScreen('account'));
+            document.getElementById('backFromNikolay').addEventListener('click', () => showScreen('account'));
+            document.getElementById('backFromTransfer').addEventListener('click', () => showScreen('mikhail'));
+
+            // Новая кнопка переводов у Михаила
+            document.getElementById('mikhailTransferBtn').addEventListener('click', () => {
+                showScreen('transfer');
+            });
+
+            // Перевод от Михаила
+            document.getElementById('executeTransfer').addEventListener('click', () => {
+                const account = document.getElementById('accountNumber').value.trim();
+                const amount = parseFloat(document.getElementById('transferAmount').value);
+                const comment = document.getElementById('transferComment').value.trim() || 'Перевод';
+
+                if (!account || !/^\d+$/.test(account)) {
+                    alert('Номер счета должен содержать только цифры');
+                    return;
+                }
+                if (isNaN(amount) || amount <= 0) {
+                    alert('Введите корректную сумму');
+                    return;
+                }
+                if (amount > mikhailData.balance) {
+                    alert('Недостаточно средств');
+                    return;
+                }
+
+                const { date, time } = getMoscowDateTime();
+                mikhailData.balance -= amount;
+                if (!mikhailData.transactions) mikhailData.transactions = [];
+                // Вставляем новую операцию в начало массива
+                mikhailData.transactions.unshift({
+                    type: 'outcome',
+                    amount: amount,
+                    date: date,
+                    time: time,
+                    comment: comment,
+                    counterparty: `Счет ${account.slice(0,4)}...`
+                });
+                saveMikhailData().then(() => {
+                    renderMikhail();
+                    showScreen('mikhail');
+                    document.getElementById('accountNumber').value = '';
+                    document.getElementById('transferAmount').value = '';
+                    document.getElementById('transferComment').value = '';
+                });
+            });
+
+            // Николай: показать форму перевода
+            document.getElementById('nikolayTransferToMikhail').addEventListener('click', () => {
+                document.getElementById('nikolayTransferForm').classList.remove('hidden');
+            });
+            document.getElementById('cancelNikolayTransfer').addEventListener('click', () => {
+                document.getElementById('nikolayTransferForm').classList.add('hidden');
+            });
+
+            // Николай: выполнить перевод Михаилу (зачисление)
+            document.getElementById('executeNikolayTransfer').addEventListener('click', () => {
+                const sender = document.getElementById('senderName').value.trim() || 'Николай';
+                const amount = parseFloat(document.getElementById('transferAmountNik').value);
+                const comment = document.getElementById('transferCommentNik').value.trim() || 'Перевод';
+
+                if (isNaN(amount) || amount <= 0) {
+                    alert('Введите корректную сумму');
+                    return;
+                }
+
+                loadUserData(() => {
+                    const { date, time } = getMoscowDateTime();
+                    if (!mikhailData.transactions) mikhailData.transactions = [];
+                    mikhailData.transactions.unshift({
+                        type: 'income',
+                        amount: amount,
+                        date: date,
+                        time: time,
+                        comment: `От ${sender}: ${comment}`,
+                        counterparty: sender
+                    });
+                    mikhailData.balance += amount;
+                    saveMikhailData().then(() => {
+                        alert('Перевод выполнен');
+                        document.getElementById('nikolayTransferForm').classList.add('hidden');
+                        document.getElementById('transferAmountNik').value = '';
+                        document.getElementById('transferCommentNik').value = '';
+                    });
+                });
+            });
+
+            document.getElementById('nikolayClearMikhail').addEventListener('click', () => {
+                document.getElementById('nikolayClearForm').classList.remove('hidden');
+            });
+            document.getElementById('cancelClear').addEventListener('click', () => {
+                document.getElementById('nikolayClearForm').classList.add('hidden');
+                document.getElementById('confirmClearInput').value = '';
+            });
+
+            document.getElementById('executeClear').addEventListener('click', () => {
+                const confirmText = document.getElementById('confirmClearInput').value.trim();
+                if (confirmText !== 'ПОДТВЕРДИТЬ') {
+                    alert('Введите слово ПОДТВЕРДИТЬ точно');
+                    return;
+                }
+                loadUserData(() => {
+                    mikhailData.balance = 0;
+                    mikhailData.transactions = [];
+                    saveMikhailData().then(() => {
+                        alert('Аккаунт Михаила очищен');
+                        document.getElementById('nikolayClearForm').classList.add('hidden');
+                        document.getElementById('confirmClearInput').value = '';
+                    });
+                });
+            });
+        });
+    </script>
+</body>
+</html>
